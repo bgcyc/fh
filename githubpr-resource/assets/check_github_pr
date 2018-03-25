@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+import json
+import sys
+#import requests
+
+from github import Github
+#import pprint
+#import datetime
+
+def checkPR(inStream, isCheck):
+    input = json.load(inStream)
+    output = {}
+    output["version"] = {}
+    output["metadata"] = {}
+    output["metadata"]["reviewers"] = {}
+    output["metadata"]["tests"] = {}
+    g = Github(input['source']['token'])
+    repo = g.get_repo(input['source']['repo'])
+    pull = repo.get_pull(int(input['source']['pullNumber']))
+
+    reviews = {}
+    approved = False
+    for review in pull.get_reviews():
+        reviews[review.user.login] = review.state
+        output["metadata"]["reviewers"][review.user.login] = review.state
+        approved = True & (len(reviews) > 0)
+        for user in reviews:
+            if reviews[user] != 'APPROVED':
+                approved = False
+
+    statuses = []
+    commit = repo.get_commit(pull.head.sha)
+    for status in commit.get_statuses():
+       statuses.append({status.context:status.state})
+
+    xxx = {}
+    for status in reversed(statuses):
+       for context in status:
+           output["metadata"]["tests"][context] = status[context]
+           xxx[context] = status[context]
+
+    passed = True & (len(xxx) > 0)
+    for context in xxx:
+       if xxx[context] != 'success':
+           passed = False
+
+    if approved & passed:
+        if isCheck:
+           output = []
+           output.append({"ref":pull.head.sha})
+        else:
+           output["version"] = {"ref":pull.head.sha}
+        print(json.dumps(output))
+    else:
+        if isCheck:
+           print(json.dumps([]))
+        else:
+           print(json.dumps(output))
+           sys.exit(1)    
+
+    return output
+
+def main(argv):
+#    print(json.dumps(checkPR(sys.stdin)))
+    checkPR(sys.stdin, not len(argv))
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
